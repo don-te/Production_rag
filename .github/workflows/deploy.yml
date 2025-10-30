@@ -1,95 +1,71 @@
-# .github/workflows/deploy.yml
-name: Build and Deploy to Cloud Run
+# .github/workflows/docker-build.yml
 
-# 1. Trigger: Run this workflow on a push to the 'main' branch
+name: Build and Push Docker Image
+
+# Controls when the workflow will run
 on:
+  # Triggers the workflow on push events but only for the "main" branch
   push:
-    branches:
-      - main
-
-# 2. Environment Variables: Pull secrets from GitHub
-env:
-  GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
-  GCP_SERVICE_ACCOUNT: ${{ secrets.GCP_SERVICE_ACCOUNT }}
-  OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-  
-  # Set your repository name and GCP region
-  REPOSITORY_NAME: rag-api-repo # Name of your Artifact Registry repo
-  SERVICE_NAME: rag-api-service # Name of your Cloud Run service
-  REGION: us-central1 # Change to your preferred GCP region
+    branches: [ "main" ]
+    
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
 
 jobs:
-  build:
+  build-and-push:
+    # Use the latest Ubuntu runner
     runs-on: ubuntu-latest
+
+    # Define permissions for actions to write to GHCR
+    permissions:
+      contents: read
+      packages: write
+
     steps:
-      # Step 1: Set up Docker Buildx (Installer)
+      # 1. Check out your repository code
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. Log in to the GitHub Container Registry (GHCR)
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # 3. Set up Docker Buildx (Installs the CLI)
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # Step 2: Create and Bootstrap a New Builder Instance (The Key Fix)
-      # This step creates a builder instance using the 'docker-container' driver
-      # which is required for cache export.
-      - name: Cache and Setup Builder
+      # 4. ⭐️ THE FIX: Create a new builder instance using the docker-container driver
+      #    This is required for 'cache-to' (cache export) to work.
+      - name: Create Builder with Container Driver
         uses: docker/setup-buildx-action@v3
         with:
           driver: docker-container
-          driver-opts: |
-            image=moby/buildkit:latest
-          append: false
+          append: false # Creates a new builder instead of adding to the default one
+
+      # 5. Build and push the Docker image
+      #    This step now uses the new builder instance created above.
+      - name: Build and Push Docker Image
+        uses: docker/build-push-action@v5
+        with:
+          # Set the build context to the current directory
+          context: .
           
-  build-and-deploy:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: 'read'
-      id-token: 'write'
-      packages: 'write' # Permission to push to GitHub Container Registry
-
-    steps:
-    - name: Checkout Code
-      uses: actions/checkout@v4
-
-    # 3. Log in to GitHub Container Registry (ghcr.io)
-    - name: Log in to GitHub Container Registry
-      uses: docker/login-action@v3
-      with:
-        registry: ghcr.io
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-
-    # 4. Build and Push Docker Image
-    - name: Build and Push Docker Image
-      uses: docker/build-push-action@v5
-      with:
-        context: .
-        push: true
-        # Tag the image with the GitHub SHA and 'latest'
-        tags: |
-          ghcr.io/${{ github.repository }}:${{ github.sha }}
-          ghcr.io/${{ github.repository }}:latest
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
-
-    # 5. Authenticate to Google Cloud
-    - name: Authenticate to Google Cloud
-      uses: 'google-github-actions/auth@v2'
-      with:
-        credentials_json: ${{ env.GCP_SERVICE_ACCOUNT }}
-
-    # 6. Deploy to Google Cloud Run
-    - name: Deploy to Cloud Run
-      id: deploy
-      uses: 'google-github-actions/deploy-cloudrun@v2'
-      with:
-        service: ${{ env.SERVICE_NAME }}
-        region: ${{ env.REGION }}
-        # Use the image we just pushed to GHCR
-        image: ghcr.io/${{ github.repository }}:${{ github.sha }}
-        # Inject the OpenRouter API key as a runtime environment variable
-        env_vars: |
-          OPENROUTER_API_KEY=${{ env.OPENROUTER_API_KEY }}
-
-    # 7. Output the live URL
-    - name: Show Live URL
-      if: success() && steps.deploy.outputs.url != '' # Only run if deploy succeeded and URL is not empty
-      run: |
-        echo "🚀 Deployment successful! Live URL: ${{ steps.deploy.outputs.url }}"
+          # Push the image to the registry after building
+          push: true
+          
+          # Define the tags for your image
+          # This example tags 'latest' and also tags with the specific Git commit SHA
+          tags: |
+            ghcr.io/don-te/Production_rag:latest
+            ghcr.io/don-te/Production_rag:${{ github.sha }}
+            
+          # Enable caching to speed up future builds
+          # Reads from the GitHub Actions cache
+          cache-from: type=gha
+          
+          # Writes to the GitHub Actions cache (this is what was failing)
+          cache-to: type=gha,mode=max
