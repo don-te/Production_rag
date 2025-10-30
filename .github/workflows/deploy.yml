@@ -19,6 +19,24 @@ env:
   REGION: us-central1 # Change to your preferred GCP region
 
 jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      # Step 1: Set up Docker Buildx (Installer)
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Step 2: Create and Bootstrap a New Builder Instance (The Key Fix)
+      # This step creates a builder instance using the 'docker-container' driver
+      # which is required for cache export.
+      - name: Cache and Setup Builder
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver: docker-container
+          driver-opts: |
+            image=moby/buildkit:latest
+          append: false
+          
   build-and-deploy:
     runs-on: ubuntu-latest
     permissions:
