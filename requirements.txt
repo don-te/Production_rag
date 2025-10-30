@@ -9,3 +9,4 @@ litellm
 fastapi
 uvicorn
 python-dotenv
+langsmith
