@@ -1,0 +1,11 @@
+langchain
+langchain-core
+langchain-chroma
+langchain-huggingface
+sentence-transformers
+chromadb
+langsmith
+litellm        
+fastapi
+uvicorn
+python-dotenv
